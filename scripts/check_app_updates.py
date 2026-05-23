@@ -1,3 +1,4 @@
+
 #!/usr/bin/env python3
 """
 Incremental update checker for Morphe AutoBuilds.
@@ -343,6 +344,8 @@ def plan_incremental(full_matrix: List[dict], old_manifest: Optional[dict],
                      existing_apks: List[str]) -> Tuple[List[dict], List[str], dict]:
     """Decide which entries need rebuilding.
     Returns (build_matrix, carry_over_apks, new_manifest_entries)."""
+    old_entries = (old_manifest or {}).get("entries", {}) if isinstance(old_manifest, dict) else {}
+    existing_apk_set = set(existing_apks)
 
     build_matrix: List[dict] = []
     carry_over: List[str] = []
@@ -398,7 +401,7 @@ def plan_incremental(full_matrix: List[dict], old_manifest: Optional[dict],
             logging.info(f"  REBUILD {app}/{src}/{arch}: {'; '.join(reasons)}")
             build_matrix.append(entry)
         else:
-            old_apk = old.get("apk", "") if old else ""
+            old_apk = carried_apk
             if old_apk and old_apk in existing_apk_set:
                 carry_over.append(old_apk)
                 logging.info(f"  carry  {app}/{src}/{arch}: {old_apk}")
