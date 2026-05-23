@@ -223,25 +223,24 @@ def get_source_signature(source: str) -> str:
 # ---------------------------------------------------------------------------
 # Existing release manifest + assets
 # ---------------------------------------------------------------------------
+def _get_repo_owner_name() -> Optional[Tuple[str, str]]:
+    repo = (os.environ.get("GITHUB_REPOSITORY") or "").strip()
+    if "/" not in repo:
+        return None
+    owner, name = repo.split("/", 1)
+    owner = owner.strip()
+    name = name.strip()
+    if not owner or not name:
+        return None
+    return owner, name
+
+
 def fetch_existing_manifest() -> Optional[dict]:
-    rc, out, err = run_gh(["release", "view", RELEASE_TAG, "--json", "assets"])
-    if rc != 0:
-        logging.info(f"No existing '{RELEASE_TAG}' release ({err.strip()[:100]})")
-        return None
-    try:
-        assets = [a.get("name", "") for a in json.loads(out).get("assets", [])]
-    except Exception as e:
-        logging.warning(f"Cannot parse assets JSON: {e}")
-        return None
-
-    if MANIFEST_NAME not in assets:
-        logging.info(f"Existing release has no '{MANIFEST_NAME}' (first incremental run)")
-        return None
-
     rc, _, err = run_gh(["release", "download", RELEASE_TAG,
                          "--pattern", MANIFEST_NAME, "--clobber"])
     if rc != 0:
-        logging.warning(f"Failed to download manifest: {err.strip()[:120]}")
+        msg = err.strip()[:120]
+        logging.info(f"No existing '{MANIFEST_NAME}' on '{RELEASE_TAG}' ({msg})")
         return None
     try:
         with open(MANIFEST_NAME, "r", encoding="utf-8") as f:
@@ -252,6 +251,28 @@ def fetch_existing_manifest() -> Optional[dict]:
 
 
 def fetch_existing_apk_names() -> List[str]:
+    repo = _get_repo_owner_name()
+    if repo:
+        owner, name = repo
+        rc, out, _ = run_gh(
+            ["api", f"repos/{owner}/{name}/releases/tags/{RELEASE_TAG}", "--jq", ".id"]
+        )
+        rel_id = out.strip() if rc == 0 else ""
+        if rel_id:
+            rc, out, _ = run_gh(
+                [
+                    "api",
+                    "--paginate",
+                    f"repos/{owner}/{name}/releases/{rel_id}/assets?per_page=100",
+                    "--jq",
+                    ".[].name",
+                ],
+                timeout=300,
+            )
+            if rc == 0:
+                names = [ln.strip() for ln in out.splitlines() if ln.strip()]
+                return [n for n in names if n.endswith(".apk")]
+
     rc, out, _ = run_gh(["release", "view", RELEASE_TAG, "--json", "assets"])
     if rc != 0:
         return []
