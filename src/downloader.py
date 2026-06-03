@@ -124,7 +124,14 @@ def download_from_bundle(bundle_info: dict) -> tuple[list[Path], str]:
     
     return downloaded_files, name
 
-def download_platform(app_name: str, platform: str, cli: str, patches: str, arch: str = None) -> tuple[Path | None, str | None]:
+def download_platform(
+    app_name: str,
+    platform: str,
+    cli: str,
+    patches: str,
+    arch: str = None,
+    override_version: str = None,
+) -> tuple[Path | None, str | None, list[str]]:
     try:
         config_path = Path("apps") / platform / f"{app_name}.json"
         if not config_path.exists():
@@ -137,33 +144,81 @@ def download_platform(app_name: str, platform: str, cli: str, patches: str, arch
         if arch:
             config['arch'] = arch
 
-        version = config.get("version") or utils.get_supported_version(config['package'], cli, patches)
         platform_module = globals()[platform]
-        version = version or platform_module.get_latest_version(app_name, config)
-        
-        download_link = platform_module.get_download_link(version, app_name, config)
-        if not download_link:
-            raise ValueError(f"No download link found for {app_name} version {version}")
-            
-        filepath = download_resource(download_link)
-        return filepath, version 
+
+        # Candidate versions (highest -> lowest) for universal robustness:
+        # - If config pins a version: only try that.
+        # - Else if override provided (retry path): try only that.
+        # - Else ask the patching CLI for compatible versions and try those.
+        # - If none returned: fall back to latest available from the store.
+        pinned = (config.get("version") or "").strip()
+        if override_version:
+            candidates = [override_version]
+        elif pinned:
+            candidates = [pinned]
+        else:
+            candidates = utils.get_supported_versions(config["package"], cli, patches)
+            if not candidates:
+                latest = platform_module.get_latest_version(app_name, config)
+                candidates = [latest] if latest else []
+
+        last_error: Exception | None = None
+        for version in candidates:
+            if not version:
+                continue
+            download_link = platform_module.get_download_link(version, app_name, config)
+            if not download_link:
+                last_error = ValueError(f"No download link found for {app_name} version {version}")
+                continue
+            try:
+                filepath = download_resource(download_link)
+                return filepath, version, candidates
+            except Exception as e:
+                last_error = e
+                continue
+
+        raise last_error or ValueError(f"No downloadable versions found for {app_name} on {platform}")
 
     except Exception as e:
         logging.error(f"Unexpected error: {e}")
-        return None, None
+        return None, None, []
 
 # Update the specific download functions
-def download_apkmirror(app_name: str, cli: str, patches: str, arch: str = None) -> tuple[Path | None, str | None]:
-    return download_platform(app_name, "apkmirror", cli, patches, arch)
+def download_apkmirror(
+    app_name: str,
+    cli: str,
+    patches: str,
+    arch: str = None,
+    override_version: str = None,
+) -> tuple[Path | None, str | None, list[str]]:
+    return download_platform(app_name, "apkmirror", cli, patches, arch, override_version)
 
-def download_apkpure(app_name: str, cli: str, patches: str, arch: str = None) -> tuple[Path | None, str | None]:
-    return download_platform(app_name, "apkpure", cli, patches, arch)
+def download_apkpure(
+    app_name: str,
+    cli: str,
+    patches: str,
+    arch: str = None,
+    override_version: str = None,
+) -> tuple[Path | None, str | None, list[str]]:
+    return download_platform(app_name, "apkpure", cli, patches, arch, override_version)
 
-def download_aptoide(app_name: str, cli: str, patches: str, arch: str = None) -> tuple[Path | None, str | None]:
-    return download_platform(app_name, "aptoide", cli, patches, arch)
+def download_aptoide(
+    app_name: str,
+    cli: str,
+    patches: str,
+    arch: str = None,
+    override_version: str = None,
+) -> tuple[Path | None, str | None, list[str]]:
+    return download_platform(app_name, "aptoide", cli, patches, arch, override_version)
 
-def download_uptodown(app_name: str, cli: str, patches: str, arch: str = None) -> tuple[Path | None, str | None]:
-    return download_platform(app_name, "uptodown", cli, patches, arch)
+def download_uptodown(
+    app_name: str,
+    cli: str,
+    patches: str,
+    arch: str = None,
+    override_version: str = None,
+) -> tuple[Path | None, str | None, list[str]]:
+    return download_platform(app_name, "uptodown", cli, patches, arch, override_version)
 
 def download_apkeditor() -> Path:
     max_retries = 3
