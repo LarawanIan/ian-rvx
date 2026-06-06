@@ -38,16 +38,41 @@ def create_github_release(name, patches_name, cli_name, apk_file_path):
     # Try to find a valid patches file in the download staging folder to read its version
     patches_dir = Path(".")
     mpp_files = list(patches_dir.glob("*.mpp"))
+    rvp_files = list(patches_dir.glob("*.rvp"))
+    
+    is_morphe = False
     
     if mpp_files:
         patchver = re.search(r'(\d+\.\d+\.\d+(-[a-z]+\.\d+)?(-release\d*)?)', mpp_files[0].stem)
         patchver = patchver.group(1) if patchver else 'unknown'
+        is_morphe = True
+    elif rvp_files:
+        patchver = re.search(r'(\d+\.\d+\.\d+(-[a-z]+\.\d+)?(-release\d*)?)', rvp_files[0].stem)
+        patchver = patchver.group(1) if patchver else 'unknown'
     else:
         patchver = re.search(r'(\d+\.\d+\.\d+(-[a-z]+\.\d+)?(-release\d*)?)', Path(patches_name).stem)
         patchver = patchver.group(1) if patchver else 'unknown'
+        if patches_name.lower().endswith('.mpp') or 'morphe' in patches_name.lower():
+            is_morphe = True
     
-    cliver = re.search(r'(\d+\.\d+\.\d+(-[a-z]+\.\d+)?(-release\d*)?)', Path(cli_name).stem)
-    cliver = cliver.group(1) if cliver else 'unknown'
+    # Determine CLI configuration identity
+    cli_filename = Path(cli_name).name.lower()
+    if 'morphe' in cli_filename or is_morphe:
+        is_morphe = True
+        system_branding = "Morphe"
+        microg_name = "Morphe MicroG-RE"
+        microg_link = "https://github.com/MorpheApp/MicroG-RE"
+        
+        # Fallback handling for optimized or custom untagged CLI binaries
+        cli_match = re.search(r'(\d+\.\d+\.\d+(-[a-z]+\.\d+)?(-release\d*)?)', Path(cli_name).stem)
+        cliver = cli_match.group(1) if cli_match else patchver
+    else:
+        system_branding = "ReVanced"
+        microg_name = "ReVanced GmsCore"
+        microg_link = "https://github.com/revanced/gmscore/releases/latest"
+        
+        cli_match = re.search(r'(\d+\.\d+\.\d+(-[a-z]+\.\d+)?(-release\d*)?)', Path(cli_name).stem)
+        cliver = cli_match.group(1) if cli_match else 'unknown'
     
     tag_name = f"{name}-v{patchver}"
 
@@ -90,16 +115,15 @@ def create_github_release(name, patches_name, cli_name, apk_file_path):
 
     # Step 4: Create new release if it doesn't exist
     if not existing_release:
-        release_body = f"""\
-# Release Notes
+        release_body = f"""# Release Notes
 
 ## Build Tools:
-- **ReVanced Patches:** v{patchver}
-- **ReVanced CLI:** v{cliver}
+- **{system_branding} Patches:** v{patchver}
+- **{system_branding} CLI:** v{cliver}
 
 ## Note:
-**ReVanced GmsCore** is **necessary** to work. 
-- Please **download** it from [HERE](https://github.com/revanced/gmscore/releases/latest).
+**{microg_name}** is **necessary** to function correctly. 
+- Please **download** it from [HERE]({microg_link}).
 """
         app_version = extract_version(str(apk_file_path))
         
